@@ -10,6 +10,10 @@ Successful streams emit STORY_STARTED, ordered CAPTION_CHUNK events, then
 STORY_COMPLETE with source, model and interaction_id. Provider failures emit
 ERROR with STORY_UNAVAILABLE or STORY_TIMEOUT; concurrent starts get STORY_BUSY.
 Demo stories require explicit server-side provider injection.
+INTERRUPT joins the active story task before acknowledging PLAYBACK_STOP with
+the stopped story_id (null while idle). No more captions or completion events
+for that story follow the acknowledgement. Clients must immediately cancel
+browser speech and discard queued captions locally when the user interrupts.
 """
 
 import asyncio
@@ -164,6 +168,7 @@ async def handle_live_companion_stream(
     session_id = uuid4().hex
     provider = story_provider or argon_story_provider
     active_task = None
+    active_story_id = None
     send_lock = asyncio.Lock()
 
     async def send(message_type: str, **fields):
@@ -180,12 +185,15 @@ async def handle_live_companion_stream(
 
     async def cancel_active():
         """Join the task so no old captions escape after cancellation returns."""
-        nonlocal active_task
+        nonlocal active_task, active_story_id
+        stopped_story_id = active_story_id
         if active_task is not None:
             active_task.cancel()
             with suppress(asyncio.CancelledError, WebSocketDisconnect, OSError):
                 await active_task
             active_task = None
+        active_story_id = None
+        return stopped_story_id
 
     async def stream_story(request: StoryRequest, story_id: str):
         """Generate one bounded story and stream captions without blocking input."""
@@ -234,6 +242,10 @@ async def handle_live_companion_stream(
                 continue
             if message.get("type") == "PING":
                 await send("PONG")
+            elif message["type"] == "INTERRUPT":
+                stopped_story_id = await cancel_active()
+                await send("PLAYBACK_STOP", story_id=stopped_story_id,
+                           message="Playback stopped. Ready to listen.")
             elif message["type"] == "START_STORY":
                 if active_task is not None and not active_task.done():
                     await send("ERROR", code="STORY_BUSY",
@@ -243,7 +255,8 @@ async def handle_live_companion_stream(
                 request = StoryRequest(
                     message["photo_id"], message["caption"], message.get("user_prompt", "")
                 )
-                active_task = asyncio.create_task(stream_story(request, uuid4().hex))
+                active_story_id = uuid4().hex
+                active_task = asyncio.create_task(stream_story(request, active_story_id))
     except (WebSocketDisconnect, OSError):
         logger.info("M3 session disconnected")
     finally:

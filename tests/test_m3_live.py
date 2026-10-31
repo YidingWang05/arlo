@@ -348,3 +348,128 @@ def test_busy_session_does_not_launch_more_model_requests():
             socket.send_json({"type": "PING"})
             assert socket.receive_json()["type"] == "PONG"
     assert len(calls) == 1
+
+
+def test_interrupt_stops_remaining_chunks_and_allows_another_story():
+    async def provider(request):
+        return Story("First sentence. Second sentence. Third sentence.")
+
+    with make_client(story_provider=provider, chunk_delay=0.05) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            ready = socket.receive_json()
+            start_story(socket)
+            first = socket.receive_json()
+            assert first["type"] == "STORY_STARTED"
+            assert socket.receive_json()["type"] == "CAPTION_CHUNK"
+            socket.send_json({"type": "INTERRUPT", "session_id": ready["session_id"]})
+            # Captions already sent before interruption may be queued in transit.
+            while True:
+                message = socket.receive_json()
+                if message["type"] == "PLAYBACK_STOP":
+                    break
+                assert message["type"] == "CAPTION_CHUNK"
+                assert message["story_id"] == first["story_id"]
+            assert message["story_id"] == first["story_id"]
+            assert message["session_id"] == ready["session_id"]
+            socket.send_json({"type": "PING"})
+            assert socket.receive_json()["type"] == "PONG"
+            start_story(socket, photo_id="photo-2")
+            second, chunks, complete = receive_story(socket)
+            assert second["story_id"] != first["story_id"]
+            assert second["photo_id"] == "photo-2"
+            assert len(chunks) == 3
+            assert complete["type"] == "STORY_COMPLETE"
+
+
+def test_interrupt_cancels_pending_generation_and_emits_no_late_result():
+    entered, cancelled = threading.Event(), threading.Event()
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        if len(calls) == 1:
+            entered.set()
+            try:
+                await asyncio.sleep(10)
+            finally:
+                cancelled.set()
+        return Story("A new story.")
+
+    with make_client(story_provider=provider, chunk_delay=0.001) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            first = socket.receive_json()
+            assert first["type"] == "STORY_STARTED"
+            assert entered.wait(1)
+            socket.send_json({"type": "PING"})
+            assert socket.receive_json()["type"] == "PONG"
+            socket.send_json({"type": "INTERRUPT"})
+            stopped = socket.receive_json()
+            assert stopped["type"] == "PLAYBACK_STOP"
+            assert stopped["story_id"] == first["story_id"]
+            assert cancelled.is_set()
+            start_story(socket)
+            second, chunks, _ = receive_story(socket)
+            assert second["story_id"] != first["story_id"]
+            assert chunks[0]["text"] == "A new story."
+
+
+def test_interrupt_is_safe_when_idle_and_can_be_repeated():
+    with make_client(story_provider=demo_story_provider, chunk_delay=0.001) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            for _ in range(2):
+                socket.send_json({"type": "INTERRUPT"})
+                stopped = socket.receive_json()
+                assert stopped["type"] == "PLAYBACK_STOP"
+                assert stopped["story_id"] is None
+            start_story(socket)
+            _, chunks, _ = receive_story(socket)
+            assert chunks
+
+
+def test_interrupt_after_completion_stops_any_buffered_browser_playback():
+    with make_client(story_provider=demo_story_provider, chunk_delay=0.001) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            started, _, _ = receive_story(socket)
+            socket.send_json({"type": "INTERRUPT"})
+            stopped = socket.receive_json()
+            assert stopped["type"] == "PLAYBACK_STOP"
+            assert stopped["story_id"] == started["story_id"]
+            socket.send_json({"type": "PING"})
+            assert socket.receive_json()["type"] == "PONG"
+
+
+def test_disconnect_cancels_pending_generation():
+    entered, cancelled = threading.Event(), threading.Event()
+
+    async def provider(request):
+        entered.set()
+        try:
+            await asyncio.sleep(10)
+        finally:
+            cancelled.set()
+
+    with make_client(story_provider=provider) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            assert socket.receive_json()["type"] == "STORY_STARTED"
+            assert entered.wait(1)
+        assert cancelled.wait(1)
+
+
+def test_interrupt_does_not_stop_other_connections():
+    with make_client(story_provider=demo_story_provider, chunk_delay=0.01) as client:
+        with client.websocket_connect("/live/ws") as first:
+            with client.websocket_connect("/live/ws") as second:
+                first.receive_json()
+                second.receive_json()
+                start_story(second)
+                first.send_json({"type": "INTERRUPT"})
+                assert first.receive_json()["type"] == "PLAYBACK_STOP"
+                _, chunks, complete = receive_story(second)
+                assert chunks and complete["type"] == "STORY_COMPLETE"
