@@ -5,7 +5,9 @@ import pytest
 from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 
-from app.modules.m3_live_tool import handle_live_companion_stream
+from app.modules.m3_live_tool import (
+    Story, demo_story_provider, handle_live_companion_stream,
+)
 
 
 def make_client(**options):
@@ -73,3 +75,52 @@ def test_binary_message_returns_error():
         assert socket.receive_json()["type"] == "ERROR"
         socket.send_json({"type": "PING"})
         assert socket.receive_json()["type"] == "PONG"
+
+
+def start_story(socket, **fields):
+    """Send a standard caption-only story request."""
+    socket.send_json({
+        "type": "START_STORY", "photo_id": "photo-1",
+        "caption": "A garden full of flowers.", **fields,
+    })
+
+
+def receive_story(socket):
+    """Collect a finite stream and fail on any unexpected intermediate event."""
+    started = socket.receive_json()
+    assert started["type"] == "STORY_STARTED"
+    chunks = []
+    while True:
+        message = socket.receive_json()
+        assert message["story_id"] == started["story_id"]
+        assert message["session_id"] == started["session_id"]
+        if message["type"] == "STORY_COMPLETE":
+            return started, chunks, message
+        assert message["type"] == "CAPTION_CHUNK"
+        chunks.append(message)
+
+
+def test_start_story_streams_ordered_captions_and_completes():
+    with make_client(story_provider=demo_story_provider, chunk_delay=0.001) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            _, chunks, complete = receive_story(socket)
+            assert [chunk["sequence"] for chunk in chunks] == list(range(1, len(chunks) + 1))
+            assert chunks and all(chunk["barge_in_ready"] for chunk in chunks)
+            assert all(chunk["source"] == "demo" for chunk in chunks)
+            assert complete["source"] == "demo"
+            assert "garden" in " ".join(chunk["text"] for chunk in chunks)
+
+
+def test_story_is_bounded_below_ninety_words():
+    async def long_provider(request):
+        return Story("word " * 200)
+
+    with make_client(story_provider=long_provider, chunk_delay=0.001) as client:
+        with client.websocket_connect("/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            _, chunks, _ = receive_story(socket)
+            assert sum(len(chunk["text"].split()) for chunk in chunks) == 89
+            assert all(len(chunk["text"].split()) <= 18 for chunk in chunks)
