@@ -88,6 +88,6 @@ Use the slides as brief support for the live frame journey. They are an outline,
 
 **Visual:** Return to the calm frame screen with one closing sentence: “One everyday moment at a time.”
 
-**Speaker note:** Describe a future evaluation, not invented results: label faithfulness and unreadable-image handling; product top-two recall on authorised catalogue cases; story grounding; cancellation and latency; task completion with users. Deployment would require authentication, consent, retention controls and operational monitoring. Backend USER_TEXT is implemented, but the current frame UI has no follow-up field and closes the socket after completion or stop.
+**Speaker note:** Describe a future evaluation, not invented results: label faithfulness and unreadable-image handling; product top-two recall on authorised catalogue cases; story grounding; cancellation and latency; task completion with users. Deployment would require authentication, consent, retention controls and operational monitoring. The photo question form sends USER_TEXT on a retained session after completion or stop acknowledgement; real-model rehearsal remains pending.
 
 **Transition:** “Arlo should make independence feel a little easier, one everyday moment at a time.”

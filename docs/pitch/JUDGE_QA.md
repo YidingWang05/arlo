@@ -55,7 +55,7 @@ OCR plus rules is a useful baseline and may be sufficient for constrained labels
 - START_STORY establishes photo context for the connection. USER_TEXT replaces the prompt for a new short response grounded in that caption; it does not append a growing transcript.
 - Send USER_TEXT after completion, or after INTERRUPT and PLAYBACK_STOP. PHOTO_REQUIRED means no photo context; STORY_BUSY means the current task must be stopped or allowed to finish.
 - Responses use the same STORY_STARTED, ordered CAPTION_CHUNK and STORY_COMPLETE events. The source/model are server-established; interaction_id may be null. Text is escaped JSON data under a separate system instruction.
-- The current frontend has start/stop story controls but no follow-up input, and closes its socket after completion or stopping. Exposing follow-ups requires a frontend integration change. This limitation must remain explicit.
+- The frontend has start/stop controls and a photo question field. It retains its connection for USER_TEXT after completion or stop acknowledgement, then releases it when changing context or leaving the frame. Offline tests cover this flow; real-model rehearsal remains pending.
 - Offline cancellation tests cover generation, chunking, restart, disconnect and session isolation. They do not establish real-network latency or cancellation of the provider's worker-thread request.
 
 ## References for technical questions
