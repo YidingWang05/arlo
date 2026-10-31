@@ -1,20 +1,24 @@
-import json
-from fastapi import WebSocket
+"""M3 application WebSocket transport; browser speech supplies audible playback.
+
+Each connection owns its session. This endpoint does not open a Gemini Live API
+session, and accepts its socket exactly once.
+"""
+
+from uuid import uuid4
+
+from fastapi import WebSocket, WebSocketDisconnect
+
 
 async def handle_live_companion_stream(websocket: WebSocket):
-    """Module 3: Full-duplex live companion with natural barge-in interruption support."""
+    """Accept a connection and exchange session-scoped control messages."""
     await websocket.accept()
+    session_id = uuid4().hex
     try:
+        await websocket.send_json({"type": "SESSION_READY", "session_id": session_id})
         while True:
-            data = await websocket.receive_text()
-            msg = json.loads(data)
-            if msg.get("type") == "INTERRUPT":
-                await websocket.send_json({"type": "PLAYBACK_STOP", "message": "Playback paused for listening"})
-            else:
-                await websocket.send_json({
-                    "type": "AUDIO_CHUNK",
-                    "text_caption": "Was this photo taken at the lake park back in 1998? Everyone looked so happy!",
-                    "barge_in_ready": True
-                })
-    except Exception:
-        await websocket.close()
+            message = await websocket.receive_json()
+            if message.get("type") == "PING":
+                await websocket.send_json({"type": "PONG", "session_id": session_id})
+    except WebSocketDisconnect:
+        # A disconnected socket must not be closed a second time.
+        return
