@@ -9,7 +9,10 @@ const root = resolve(process.cwd(), '..');
 const python = process.env.ARLO_TEST_PYTHON
   ? resolve(process.cwd(), process.env.ARLO_TEST_PYTHON)
   : process.platform === 'win32' ? 'python' : 'python3';
-const appScript = `import socket, uvicorn
+const appScript = `import os, socket, uvicorn
+if os.environ.get('ARLO_STORY_TEST_PROVIDER') == '1':
+    import app.modules.m3_live_tool as m3
+    m3.argon_story_provider = m3.demo_story_provider
 sock = socket.socket()
 sock.bind(('127.0.0.1', 0))
 sock.listen(128)
@@ -20,7 +23,7 @@ server.run(sockets=[sock])`;
 async function startBackend(demo) {
   const child = spawn(python, ['-u', '-c', appScript], {
     cwd: root,
-    env: { ...process.env, GEMINI_API_KEY: '', ARLO_ENABLE_MOCKS: demo ? 'true' : 'false' },
+    env: { ...process.env, GEMINI_API_KEY: '', ARLO_ENABLE_MOCKS: demo ? 'true' : 'false', ARLO_STORY_TEST_PROVIDER: demo ? '1' : '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let diagnostics = '';
@@ -98,4 +101,65 @@ integration('actual FastAPI responses through the frontend client', () => {
     const noKeyApi = await import('./api.js');
     await expect(noKeyApi.explainLabel(new File([png], 'label.png', { type: 'image/png' }))).rejects.toMatchObject({ kind: 'http' });
   });
+
+  it('exchanges real story WebSocket session, error and interruption messages without a key', async () => {
+    const socket = new WebSocket(`${noKeyBackend.base.replace('http:', 'ws:')}/api/arlo/live/ws`);
+    const pending = [];
+    const waiters = [];
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (waiters.length) waiters.shift()(message); else pending.push(message);
+    });
+    const next = () => pending.length ? Promise.resolve(pending.shift()) : new Promise((resolve) => waiters.push(resolve));
+    try {
+      const ready = await next();
+      expect(ready.type).toBe('SESSION_READY');
+      expect(ready.session_id).toBeTruthy();
+      socket.send(JSON.stringify({ type: 'START_STORY', session_id: ready.session_id, photo_id: 'photo-1', caption: 'A day by the sea' }));
+      const started = await next();
+      expect(started.type).toBe('STORY_STARTED');
+      const error = await next();
+      expect(error.type).toBe('ERROR');
+      expect(error.story_id).toBe(started.story_id);
+      socket.send(JSON.stringify({ type: 'INTERRUPT', session_id: ready.session_id }));
+      const stopped = await next();
+      expect(stopped.type).toBe('PLAYBACK_STOP');
+      expect(stopped.session_id).toBe(ready.session_id);
+    } finally { socket.close(); }
+  }, 10_000);
+
+  it('streams a labelled test story from the real WebSocket backend and acknowledges interruption', async () => {
+    const socket = new WebSocket(`${demoBackend.base.replace('http:', 'ws:')}/api/arlo/live/ws`);
+    const pending = [];
+    const waiters = [];
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (waiters.length) waiters.shift()(message); else pending.push(message);
+    });
+    const next = () => pending.length ? Promise.resolve(pending.shift()) : new Promise((resolve) => waiters.push(resolve));
+    try {
+      const ready = await next();
+      expect(ready.type).toBe('SESSION_READY');
+      const start = () => socket.send(JSON.stringify({ type: 'START_STORY', session_id: ready.session_id, photo_id: 'p1', caption: 'A day by the sea' }));
+      start();
+      const started = await next();
+      expect(started.type).toBe('STORY_STARTED');
+      const first = await next();
+      expect(first).toMatchObject({ type: 'CAPTION_CHUNK', story_id: started.story_id, sequence: 1, source: 'demo' });
+      socket.send(JSON.stringify({ type: 'INTERRUPT', session_id: ready.session_id }));
+      let response;
+      do { response = await next(); } while (response.type === 'CAPTION_CHUNK');
+      expect(response).toMatchObject({ type: 'PLAYBACK_STOP', story_id: started.story_id });
+      start();
+      const second = await next();
+      expect(second.type).toBe('STORY_STARTED');
+      let sequence = 0;
+      do {
+        response = await next();
+        if (response.type === 'CAPTION_CHUNK') expect(response.sequence).toBe(++sequence);
+      } while (response.type === 'CAPTION_CHUNK');
+      expect(sequence).toBeGreaterThan(0);
+      expect(response).toMatchObject({ type: 'STORY_COMPLETE', story_id: second.story_id, source: 'demo' });
+    } finally { socket.close(); }
+  }, 10_000);
 });

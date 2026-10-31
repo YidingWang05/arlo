@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import ArloFrameApp from './ArloFrameApp.jsx';
@@ -100,4 +100,26 @@ it('shows backend failure, waits for manual retry, and keeps demo mode opt-in', 
   expect(await screen.findByRole('alert')).toBeVisible();
   await user.click(screen.getByRole('checkbox', { name: 'Use demo data' }));
   expect(screen.getByText('Demo data - backend unavailable')).toBeVisible();
+});
+
+it('offers story controls on a photo and interrupts when leaving the frame', async () => {
+  let socket;
+  class FakeSocket {
+    constructor(url) { this.url = url; this.readyState = 1; this.sent = []; socket = this; }
+    send(data) { this.sent.push(JSON.parse(data)); }
+    close() { this.readyState = 3; }
+    receive(message) { this.onmessage?.({ data: JSON.stringify(message) }); }
+  }
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ code: 200, message: 'success', data: [{ id: 'p1', image_url: 'https://example.com/photo.jpg', caption: 'Family at the seaside', timestamp: '2026-10-31' }] }) })));
+  const user = userEvent.setup(); render(<ArloFrameApp />);
+  await user.click(await screen.findByRole('button', { name: /Start a story/ }));
+  act(() => socket.receive({ type: 'SESSION_READY', session_id: 's1' }));
+  expect(socket.sent[0]).toEqual({ type: 'START_STORY', session_id: 's1', photo_id: 'p1', caption: 'Family at the seaside' });
+  act(() => socket.receive({ type: 'STORY_STARTED', session_id: 's1', story_id: 'story-1', photo_id: 'p1' }));
+  act(() => socket.receive({ type: 'CAPTION_CHUNK', session_id: 's1', story_id: 'story-1', sequence: 1, text: 'A lovely day.' }));
+  expect(screen.getByLabelText('Story captions')).toHaveTextContent('A lovely day.');
+  await user.click(screen.getByRole('button', { name: /Ask Arlo/ }));
+  expect(socket.sent.at(-1)).toEqual({ type: 'INTERRUPT', session_id: 's1' });
+  expect(window.speechSynthesis.cancel).toHaveBeenCalled();
 });
