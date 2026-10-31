@@ -264,11 +264,13 @@ export default function ArloFrameApp() {
         {story.source === 'demo' && <p className="small-note"><strong>Demo story — not a live AI result.</strong></p>}
         {story.source === 'unverified' && <p className="small-note"><strong>Story source unverified.</strong></p>}
         {story.caption && <div className="story-caption" aria-label="Story captions">{story.caption}</div>}
-        <form onSubmit={(event) => { event.preventDefault(); if (story.sendText(storyQuestion)) setStoryQuestion(''); }}>
+        <form className="story-question-form" onSubmit={(event) => { event.preventDefault(); if (story.sendText(storyQuestion)) setStoryQuestion(''); }}>
           <label htmlFor="story-question">Ask about this photo</label>
-          <textarea id="story-question" className="story-caption" rows={2} maxLength={1000} value={storyQuestion} onChange={(event) => setStoryQuestion(event.target.value)} disabled={!story.canAsk || demo} aria-describedby="story-question-help" />
-          <p id="story-question-help" className="small-note">Start a story first. Ask a question after it finishes, or press Stop.</p>
-          <button className="button secondary" type="submit" disabled={!story.canAsk || demo || !storyQuestion.trim()}>Ask about photo</button>
+          <textarea id="story-question" className="story-question-input" rows={3} maxLength={1000} placeholder="Type a question about this photo…" value={storyQuestion} onChange={(event) => setStoryQuestion(event.target.value)} disabled={demo} aria-describedby="story-question-help" />
+          <div className="story-question-actions">
+            <p id="story-question-help" className="small-note">{demo ? 'Turn off demo data to start a story and ask about your photo.' : story.canAsk ? 'Ready when you are. Ask a question about the photo above.' : 'You can type now. Start a story, then wait for it to finish or press Stop before sending.'}</p>
+            <button className="button primary" type="submit" disabled={!story.canAsk || demo || !storyQuestion.trim()}>Ask about photo</button>
+          </div>
         </form>
       </section>}
       {photos.length > 1 && <div className="album-controls"><button className="button quiet" onClick={() => { story.stop(); story.clear(); setPhotoIndex((value) => (value + 1) % photos.length); }}>Next photo<Icon name="arrow" /></button><button className="button quiet" aria-pressed={rotate} onClick={() => setRotate((value) => !value)}><Icon name={rotate ? 'pause' : 'play'} />{rotate ? 'Pause photos' : 'Rotate photos'}</button></div>}
