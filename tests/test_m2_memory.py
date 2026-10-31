@@ -28,6 +28,23 @@ def test_brand_wins():
     assert run("blue Persil bottle").candidates[0].item_id == "persil"
 
 
+def test_fuzzy_model_attributes_drive_selection(monkeypatch):
+    calls = []
+
+    async def extract(prompt, image_bytes, schema):
+        calls.append((prompt, image_bytes, schema))
+        return schema(category="personal care", brand_hint="carex", shape="pump bottle")
+
+    monkeypatch.setattr(m2.gemini_engine, "generate_structured", extract)
+    result = run("the stuff we press down on to wash our hands")
+    assert result.candidates[0].item_id == "carex"
+    assert len(calls) == 1
+    assert calls[0][1] is None
+    assert calls[0][2] is m2.MemoryAttributes
+    assert "untrusted data" in calls[0][0]
+    assert "keyword matching" not in result.spoken_prompt
+
+
 @pytest.mark.parametrize("raw", [{"colours": 5}, {"invented": "product"}, {}])
 def test_invalid_or_empty_extraction(monkeypatch, raw):
     async def extract(*args):
