@@ -7,13 +7,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const integration = process.env.ARLO_INTEGRATION === '1' ? describe : describe.skip;
 const root = resolve(process.cwd(), '..');
 const python = process.env.ARLO_TEST_PYTHON
-  ? resolve(process.cwd(), process.env.ARLO_TEST_PYTHON) : 'python3';
+  ? resolve(process.cwd(), process.env.ARLO_TEST_PYTHON)
+  : process.platform === 'win32' ? 'python' : 'python3';
 const appScript = `import socket, uvicorn
 sock = socket.socket()
 sock.bind(('127.0.0.1', 0))
 sock.listen(128)
 print('PORT=' + str(sock.getsockname()[1]), flush=True)
-uvicorn.run('app.main:app', fd=sock.fileno(), log_level='warning')`;
+server = uvicorn.Server(uvicorn.Config('app.main:app', log_level='warning'))
+server.run(sockets=[sock])`;
 
 async function startBackend(demo) {
   const child = spawn(python, ['-u', '-c', appScript], {
