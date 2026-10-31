@@ -1,4 +1,7 @@
-from fastapi import APIRouter, UploadFile, File, Form, WebSocket
+from fastapi import APIRouter, UploadFile, File, Form, WebSocket, HTTPException
+import logging
+
+logger = logging.getLogger(__name__)
 from app.schemas.common import BaseResponse
 from app.schemas.m1_vision import VisionExplainResult
 from app.schemas.m2_memory_buy import MemoryBuyRequest, MemoryBuyResult
@@ -12,13 +15,27 @@ router = APIRouter(prefix="/api/arlo", tags=["Arlo Multimodal Framework"])
 
 @router.post("/vision/explain", response_model=BaseResponse[VisionExplainResult])
 async def api_vision_explain(file: UploadFile = File(...), query: str = Form("How should I take this medicine?")):
-    image_bytes = await file.read()
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(400, "Upload a JPEG, PNG, or WEBP image")
+    image_bytes = await file.read(10 * 1024 * 1024 + 1)
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Image exceeds the 10 MB limit")
+    if not image_bytes:
+        raise HTTPException(400, "Image is empty")
     result = await run_vision_explain(image_bytes, query)
     return BaseResponse(data=result)
 
 @router.post("/memory/buy", response_model=BaseResponse[MemoryBuyResult])
 async def api_memory_buy(req: MemoryBuyRequest):
-    result = await run_memory_buy(req.speech_query)
+    try:
+        result = await run_memory_buy(req.speech_query)
+    except TimeoutError:
+        raise HTTPException(504, "Memory lookup timed out; please retry") from None
+    except ConnectionError:
+        raise HTTPException(503, "Memory lookup unavailable; please retry") from None
+    except Exception as exc:
+        logger.error("Memory lookup failed (%s)", type(exc).__name__)
+        raise HTTPException(500, "Memory lookup failed") from None
     return BaseResponse(data=result)
 
 @router.websocket("/live/ws")
