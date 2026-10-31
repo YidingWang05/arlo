@@ -9,6 +9,19 @@ describe('defensive API contract', () => {
     expect(parseEnvelope(envelope(demoVision), validateVision)[PROVENANCE]).toBe('unverified');
     expect(parseEnvelope(envelope(demoMemory), validateMemory).candidates).toHaveLength(2);
   });
+  it.each([
+    [{ source: 'gemini', interaction_id: 'interaction-123', is_mock: false }, 'gemini'],
+    [{ source: 'gemini', interaction_id: null, is_mock: false }, 'unverified'],
+    [{ source: 'gemini', interaction_id: 'interaction-123' }, 'unverified'],
+    [{ source: 'gemini', interaction_id: 'interaction-123', is_mock: true }, 'demo'],
+    [{ source: 'demo', interaction_id: null, is_mock: true }, 'demo'],
+    [{ source: 'keyword', interaction_id: null, is_mock: false }, 'keyword'],
+    [{ source: 'local', interaction_id: null, is_mock: false }, 'local'],
+    [{ source: 'unknown', is_mock: false }, 'unverified'],
+    [null, 'unverified'],
+  ])('interprets provenance conservatively: %j', (meta, expected) => {
+    expect(parseEnvelope({ ...envelope(demoVision), meta }, validateVision)[PROVENANCE]).toBe(expected);
+  });
   it.each([null, {}, { code: 200, message: 'ok' }, { code: 200, message: 'ok', data: null }, { code: 500, message: 'fail', data: demoVision }])('rejects incomplete/error envelopes: %j', (value) => {
     expect(() => parseEnvelope(value, validateVision)).toThrow();
   });

@@ -39,11 +39,14 @@ function SpeechControls({ text, speech }) {
   </div>;
 }
 
-function ResultNotice({ result, demo }) {
+function ResultNotice({ result, demo, memory = false }) {
   if (demo) return null;
-  return result[PROVENANCE] === 'gemini'
-    ? <p className="source-label"><span className="status-dot" />AI response · Check against the original</p>
-    : <div className="data-notice"><strong>Demo data — backend source unverified</strong><span>The service has not identified this as a real AI result. Treat it as a demonstration only.</span></div>;
+  const source = result[PROVENANCE];
+  if (source === 'gemini') return <div className="data-notice"><strong>AI response</strong><span>{memory ? 'Matched against the sample household catalogue; not verified purchase history.' : 'Check this against the original label.'}</span></div>;
+  if (source === 'keyword') return <div className="data-notice"><strong>Keyword matching</strong><span>Matched against the sample household catalogue; not verified purchase history.</span></div>;
+  if (source === 'local') return <div className="data-notice"><strong>Local result</strong><span>{memory ? 'Matched against the sample household catalogue; not verified purchase history.' : 'This result was provided locally, not identified as an AI response.'}</span></div>;
+  if (source === 'demo') return <div className="data-notice"><strong>Demo data — not a live AI result</strong><span>This example was supplied by the backend for demonstration only.</span></div>;
+  return <div className="data-notice"><strong>Result source unverified</strong><span>The service has not identified the source. Treat this result as a demonstration only.</span></div>;
 }
 
 function ErrorPanel({ error, retry, back }) {
@@ -296,7 +299,7 @@ export default function ArloFrameApp() {
       </form>}
 
       {screen === 'memory' && result && !error && <div className="memory-result">
-        <ResultNotice result={result} demo={demo} />
+        <ResultNotice result={result} demo={demo} memory />
         {!selected ? <><p className="spoken-prompt" aria-live="polite">{result.spoken_prompt}</p><div className="product-grid">{result.candidates.map((item, index) => <button className="product-card" key={item.item_id} onClick={() => { speech.stop(); setSelected({ ...item, letter: index === 0 ? 'A' : 'B' }); }}><span className="option-letter">{index === 0 ? 'A' : 'B'}</span><Image src={item.image_url} alt={item.name} className="product-image" /><span className="product-copy"><span className="product-name">{item.name}</span><span className="display-tag">{item.display_tag}</span><span className="product-select">Choose {index === 0 ? 'A' : 'B'}<Icon name="arrow" /></span></span></button>)}</div><SpeechControls text={result.spoken_prompt} speech={speech} /></>
           : <section className="confirmation" aria-live="polite"><div className="confirmation-badge"><Icon name="check" size={40} /></div><p className="eyebrow">YOU SELECTED OPTION {selected.letter}</p><h2 className="takeaway">{selected.name}</h2><p>Nothing has been ordered or paid for.</p><div className="button-row"><button className="button primary" onClick={() => navigate('ambient')}>Back to my frame<Icon name="photo" /></button><button className="button quiet" onClick={() => setSelected(null)}>Choose again</button></div></section>}
       </div>}
