@@ -203,6 +203,29 @@ def test_actual_gateway_streams_using_the_shared_provider(shared_engine):
             assert chunks and complete["source"] == "argon"
 
 
+@pytest.mark.parametrize("provider_id", [None, "", "absent"])
+def test_actual_gateway_accepts_verified_stateless_response_without_id(shared_engine, provider_id):
+    """Exercise the real core and gateway without network or private storage."""
+    from app.main import app
+
+    _, create = shared_engine
+    if provider_id == "absent":
+        del create.return_value.id
+    else:
+        create.return_value.id = provider_id
+    with TestClient(app) as client:
+        with client.websocket_connect("/api/arlo/live/ws") as socket:
+            socket.receive_json()
+            start_story(socket)
+            _, chunks, complete = receive_story(socket)
+    assert chunks and all(chunk["source"] == "argon" for chunk in chunks)
+    assert complete["source"] == "argon"
+    assert complete["model"] == ARGON_MODEL
+    assert complete["interaction_id"] is None
+    create.assert_called_once()
+    assert create.call_args.kwargs["store"] is False
+
+
 @pytest.mark.parametrize("field,value", [
     ("photo_id", "p" * 129), ("caption", "c" * 2_001),
     ("user_prompt", "u" * 1_001),
@@ -233,7 +256,9 @@ def test_invalid_model_output_has_no_caption_or_demo_fallback(shared_engine, tex
     None,
     SimpleNamespace(source="demo", model=ARGON_MODEL, interaction_id="fake"),
     SimpleNamespace(source="gemini", model="other-model", interaction_id="fake"),
-    SimpleNamespace(source="gemini", model=ARGON_MODEL, interaction_id=None),
+    SimpleNamespace(source="gemini", model=ARGON_MODEL, interaction_id=123),
+    SimpleNamespace(source="gemini", model=ARGON_MODEL, interaction_id=""),
+    SimpleNamespace(source="gemini", model=ARGON_MODEL, interaction_id="   "),
 ])
 def test_unverified_provider_results_are_rejected(monkeypatch, metadata):
     from app.core import base_model
