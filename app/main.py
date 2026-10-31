@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+from app.core.config import settings
 
 app = FastAPI(
     title="Arlo Multimodal Assistant (Gemini 4 Argon Core)",
@@ -10,7 +11,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,7 +23,7 @@ app.include_router(router)
 def root():
     return {
         "project": "Arlo Multimodal Living Assistant",
-        "foundation_model": "gemini-4-argon",
+        "foundation_model": settings.GEMINI_MODEL_NAME,
         "version": "4.0.0",
         "status": "ready",
         "docs": "/docs"
