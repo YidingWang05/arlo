@@ -160,6 +160,18 @@ integration('actual FastAPI responses through the frontend client', () => {
       } while (response.type === 'CAPTION_CHUNK');
       expect(sequence).toBeGreaterThan(0);
       expect(response).toMatchObject({ type: 'STORY_COMPLETE', story_id: second.story_id, source: 'demo' });
+      socket.send(JSON.stringify({ type: 'USER_TEXT', session_id: ready.session_id, text: 'What is in this photo?' }));
+      const followup = await next();
+      expect(followup.type).toBe('STORY_STARTED');
+      expect(followup.photo_id).toBe('p1');
+      expect(followup.story_id).not.toBe(second.story_id);
+      sequence = 0;
+      do {
+        response = await next();
+        if (response.type === 'CAPTION_CHUNK') expect(response.sequence).toBe(++sequence);
+      } while (response.type === 'CAPTION_CHUNK');
+      expect(sequence).toBeGreaterThan(0);
+      expect(response).toMatchObject({ type: 'STORY_COMPLETE', story_id: followup.story_id, source: 'demo' });
     } finally { socket.close(); }
   }, 10_000);
 });

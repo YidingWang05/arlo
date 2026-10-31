@@ -83,8 +83,10 @@ export default function ArloFrameApp() {
   const firstRender = useRef(true);
   const speech = useSpeech();
   const story = usePhotoStory();
+  const [storyQuestion, setStoryQuestion] = useState('');
   const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const visiblePhoto = photos[photoIndex % Math.max(photos.length, 1)];
+  useEffect(() => setStoryQuestion(''), [visiblePhoto?.id, screen]);
 
   const stopRecognition = useCallback(() => {
     if (recognition.current) {
@@ -262,6 +264,12 @@ export default function ArloFrameApp() {
         {story.source === 'demo' && <p className="small-note"><strong>Demo story — not a live AI result.</strong></p>}
         {story.source === 'unverified' && <p className="small-note"><strong>Story source unverified.</strong></p>}
         {story.caption && <div className="story-caption" aria-label="Story captions">{story.caption}</div>}
+        <form onSubmit={(event) => { event.preventDefault(); if (story.sendText(storyQuestion)) setStoryQuestion(''); }}>
+          <label htmlFor="story-question">Ask about this photo</label>
+          <textarea id="story-question" className="story-caption" rows={2} maxLength={1000} value={storyQuestion} onChange={(event) => setStoryQuestion(event.target.value)} disabled={!story.canAsk || demo} aria-describedby="story-question-help" />
+          <p id="story-question-help" className="small-note">Start a story first. Ask a question after it finishes, or press Stop.</p>
+          <button className="button secondary" type="submit" disabled={!story.canAsk || demo || !storyQuestion.trim()}>Ask about photo</button>
+        </form>
       </section>}
       {photos.length > 1 && <div className="album-controls"><button className="button quiet" onClick={() => { story.stop(); story.clear(); setPhotoIndex((value) => (value + 1) % photos.length); }}>Next photo<Icon name="arrow" /></button><button className="button quiet" aria-pressed={rotate} onClick={() => setRotate((value) => !value)}><Icon name={rotate ? 'pause' : 'play'} />{rotate ? 'Pause photos' : 'Rotate photos'}</button></div>}
     </main> : <main id="main" className="inspector-main">

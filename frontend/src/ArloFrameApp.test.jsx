@@ -123,3 +123,34 @@ it('offers story controls on a photo and interrupts when leaving the frame', asy
   expect(socket.sent.at(-1)).toEqual({ type: 'INTERRUPT', session_id: 's1' });
   expect(window.speechSynthesis.cancel).toHaveBeenCalled();
 });
+
+it('enables the photo question form after stopping and streams the follow-up reply', async () => {
+  let socket;
+  class FakeSocket {
+    constructor() { this.readyState = 1; this.sent = []; socket = this; }
+    send(data) { this.sent.push(JSON.parse(data)); }
+    close() { this.readyState = 3; }
+    receive(message) { this.onmessage?.({ data: JSON.stringify({ session_id: 's1', ...message }) }); }
+  }
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ code: 200, message: 'success', data: [{ id: 'p1', image_url: 'https://example.com/photo.jpg', caption: 'A red flower', timestamp: '2026-10-31' }] }) })));
+  const user = userEvent.setup(); render(<ArloFrameApp />);
+  expect(await screen.findByLabelText('Ask about this photo')).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: /Start a story/ }));
+  act(() => {
+    socket.receive({ type: 'SESSION_READY' });
+    socket.receive({ type: 'STORY_STARTED', story_id: 'story-1', photo_id: 'p1' });
+  });
+  await user.click(screen.getByRole('button', { name: 'Stop' }));
+  act(() => socket.receive({ type: 'PLAYBACK_STOP', story_id: 'story-1' }));
+  await user.type(screen.getByLabelText('Ask about this photo'), 'What colour is the flower?');
+  await user.click(screen.getByRole('button', { name: 'Ask about photo' }));
+  expect(socket.sent.at(-1)).toEqual({ type: 'USER_TEXT', text: 'What colour is the flower?', session_id: 's1' });
+  expect(screen.getByLabelText('Ask about this photo')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Ask about photo' })).toBeDisabled();
+  act(() => {
+    socket.receive({ type: 'STORY_STARTED', story_id: 'reply-1', photo_id: 'p1' });
+    socket.receive({ type: 'CAPTION_CHUNK', story_id: 'reply-1', sequence: 1, text: 'The caption says red.', source: 'demo' });
+  });
+  expect(screen.getByLabelText('Story captions')).toHaveTextContent('The caption says red.');
+});

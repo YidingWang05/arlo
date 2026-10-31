@@ -38,7 +38,8 @@ it('sends the photo and session, displays chunks, and speaks them in order until
   act(() => window.speechSynthesis.speak.mock.calls[1][0].onend());
   expect(result.current.status).toBe('complete');
   expect(result.current.source).toBe('ai');
-  expect(socket.readyState).toBe(3);
+  expect(socket.readyState).toBe(1);
+  expect(result.current.canAsk).toBe(true);
 });
 
 it.each([null, undefined, 'interaction-1'])('accepts verified Argon completion with optional interaction ID: %s', (interactionId) => {
@@ -84,7 +85,8 @@ it('cancels immediately, clears queued speech and ignores late chunks until stop
   expect(result.current.caption).not.toContain('Too late.');
   act(() => socket.receive(event('PLAYBACK_STOP', { story_id: 'story-1' })));
   expect(result.current.status).toBe('idle');
-  expect(socket.readyState).toBe(3);
+  expect(socket.readyState).toBe(1);
+  expect(result.current.canAsk).toBe(true);
 });
 
 it('stops even before SESSION_READY and does not send a story afterward', () => {
@@ -119,4 +121,113 @@ it('labels demo stories and cleans up playback on unmount', () => {
   unmount();
   expect(window.speechSynthesis.cancel).toHaveBeenCalled();
   expect(socket.readyState).toBe(3);
+});
+
+it('sends USER_TEXT on the same session and resets reply IDs, captions and sequence', () => {
+  const { result } = renderHook(() => usePhotoStory());
+  const socket = begin(result);
+  act(() => socket.receive(event('CAPTION_CHUNK', { story_id: 'story-1', sequence: 1, text: 'Old story.' })));
+  act(() => socket.receive(event('STORY_COMPLETE', { story_id: 'story-1', source: 'demo' })));
+  expect(result.current.canAsk).toBe(false);
+  act(() => window.speechSynthesis.speak.mock.calls[0][0].onend());
+  expect(result.current.canAsk).toBe(true);
+  let sent;
+  act(() => { sent = result.current.sendText('  What is in this photo?  '); });
+  expect(sent).toBe(true);
+  expect(sockets).toHaveLength(1);
+  expect(socket.sent.at(-1)).toEqual({ type: 'USER_TEXT', text: 'What is in this photo?', session_id: 'session-1' });
+  expect(result.current.caption).toBe('');
+  expect(result.current.canAsk).toBe(false);
+  act(() => {
+    socket.receive(event('CAPTION_CHUNK', { story_id: 'story-1', sequence: 2, text: 'Stale text.' }));
+    socket.receive(event('STORY_STARTED', { story_id: 'reply-1', photo_id: photo.id }));
+    socket.receive(event('CAPTION_CHUNK', { story_id: 'reply-1', sequence: 1, text: 'A day by the sea.' }));
+    socket.receive(event('STORY_COMPLETE', { story_id: 'reply-1', source: 'demo' }));
+    window.speechSynthesis.speak.mock.calls[1][0].onend();
+  });
+  expect(result.current.caption).toBe('A day by the sea.');
+  expect(result.current.status).toBe('complete');
+  act(() => { sent = result.current.sendText('Can you tell me more?'); });
+  expect(sent).toBe(true);
+  expect(socket.sent.at(-1).type).toBe('USER_TEXT');
+});
+
+it('waits for stop acknowledgement before a follow-up and ignores old speech callbacks', () => {
+  const { result } = renderHook(() => usePhotoStory());
+  const socket = begin(result);
+  act(() => socket.receive(event('CAPTION_CHUNK', { story_id: 'story-1', sequence: 1, text: 'Old speech.' })));
+  const oldSpeech = window.speechSynthesis.speak.mock.calls[0][0];
+  let sent;
+  act(() => { sent = result.current.sendText('A question?'); });
+  expect(sent).toBe(false);
+  act(() => result.current.stop());
+  act(() => { sent = result.current.sendText('A question?'); });
+  expect(sent).toBe(false);
+  act(() => socket.receive(event('PLAYBACK_STOP', { story_id: 'story-1' })));
+  act(() => { sent = result.current.sendText('A question?'); });
+  expect(sent).toBe(true);
+  act(() => {
+    socket.receive(event('STORY_STARTED', { story_id: 'reply-1', photo_id: photo.id }));
+    socket.receive(event('CAPTION_CHUNK', { story_id: 'reply-1', sequence: 1, text: 'New speech.' }));
+    socket.receive(event('CAPTION_CHUNK', { story_id: 'reply-1', sequence: 2, text: 'Queued new speech.' }));
+    oldSpeech.onend();
+    oldSpeech.onerror({ error: 'interrupted' });
+  });
+  expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(2);
+  act(() => window.speechSynthesis.speak.mock.calls[1][0].onend());
+  expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(3);
+});
+
+it.each(['', '   ', 'x'.repeat(1001)])('rejects invalid follow-up text without sending: %s', (text) => {
+  const { result } = renderHook(() => usePhotoStory());
+  let sent;
+  act(() => { sent = result.current.sendText(text); });
+  expect(sent).toBe(false);
+  expect(sockets).toHaveLength(0);
+});
+
+it('requires photo context and closes the old context when cleared', () => {
+  const { result } = renderHook(() => usePhotoStory());
+  let sent;
+  act(() => { sent = result.current.sendText('A question?'); });
+  expect(sent).toBe(false);
+  const socket = begin(result);
+  act(() => result.current.stop());
+  act(() => socket.receive(event('PLAYBACK_STOP', { story_id: 'story-1' })));
+  expect(result.current.canAsk).toBe(true);
+  act(() => result.current.clear());
+  expect(socket.readyState).toBe(3);
+  expect(result.current.canAsk).toBe(false);
+  expect(result.current.status).toBe('idle');
+});
+
+it('can start another photo story after completion and cleanly release an idle connection', () => {
+  const { result } = renderHook(() => usePhotoStory());
+  const first = begin(result);
+  act(() => first.receive(event('STORY_COMPLETE', { story_id: 'story-1', source: 'demo' })));
+  act(() => result.current.start({ id: 'photo-2', caption: 'A garden.' }));
+  expect(first.readyState).toBe(3);
+  const second = sockets.at(-1);
+  act(() => {
+    second.receive(event('SESSION_READY'));
+    second.receive(event('STORY_STARTED', { story_id: 'story-2', photo_id: 'photo-2' }));
+    second.receive(event('STORY_COMPLETE', { story_id: 'story-2', source: 'demo' }));
+  });
+  act(() => { second.readyState = 3; second.onclose(); });
+  expect(result.current.status).toBe('complete');
+  expect(result.current.canAsk).toBe(false);
+});
+
+it('blocks follow-ups until stop is acknowledged even after completion', () => {
+  const { result } = renderHook(() => usePhotoStory());
+  const socket = begin(result);
+  act(() => socket.receive(event('STORY_COMPLETE', { story_id: 'story-1', source: 'demo' })));
+  expect(result.current.canAsk).toBe(true);
+  act(() => result.current.stop());
+  expect(result.current.canAsk).toBe(false);
+  let sent;
+  act(() => { sent = result.current.sendText('Another question?'); });
+  expect(sent).toBe(false);
+  act(() => socket.receive(event('PLAYBACK_STOP', { story_id: 'story-1' })));
+  expect(result.current.canAsk).toBe(true);
 });
