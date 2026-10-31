@@ -1,48 +1,39 @@
 # Arlo — Multimodal Everyday Living Assistant for Older Adults
 > **Google DeepMind / Gemini Hackathon**  
-> **Powered by Gemini 4 Argon**
+> **Track 2 — Multimodal & Human-Centric AI**  
+> **Core Foundation Engine: Powered by Gemini 4 Argon (`gemini-4-argon`)**
 
-Arlo is a human-centric, multimodal AI assistant designed for older adults. Deployed in a digital photo frame form factor, Arlo bridges the digital divide through camera vision, expressive speech, and family context memory.
+---
+
+## 📖 Executive Summary & Mission
+
+As digital services grow increasingly complex, older adults frequently encounter high friction barriers: unreadable miniature fonts (5–6pt), convoluted medical and bureaucratic jargon, complex smartphone navigation, and digital isolation.
+
+**Arlo** transforms everyday assistance into an ambient, zero-learning-curve **Smart Photo Frame** form factor. Built specifically for independent seniors, Arlo replaces tedious smartphone operations with natural **Camera Vision**, **Expressive Conversational Speech**, and **Family Household Memory**.
+
+Instead of asking an older adult to navigate apps or type search queries, Arlo operates on three human-centric principles:
+1. **Camera as the Eye**: Point a medicine box or utility bill to the frame, and Arlo explains it in plain language with large fonts.
+2. **Memory as the Brain**: Say *"buy the blue bottle my daughter bought"*, and Arlo pulls candidate images for single-decision confirmation.
+3. **Voice as the Companion**: Browse vintage family photos while conversing with Gemini 4 Argon in full-duplex live audio with natural barge-in interruption.
 
 ---
 
 ## 🏛️ System Architecture
 
-The project features a **Single Gemini 4 Argon Foundation Engine** driving **4 Decoupled Tool Modules**:
+Arlo adopts a decoupled **"One Foundation Model + Four Specialized Tool Modules"** architecture. All inter-module communication is strictly enforced via **Pydantic v2 schemas** in `app/schemas/` to guarantee zero contract drift.
 
-1. **Module 1: Vision Explainer (`/api/arlo/vision/explain`)**
-   - Extracts dosage instructions from medicine boxes and complex bills into large-print text and plain-language speech.
-2. **Module 2: Memory Buy (`/api/arlo/memory/buy`)**
-   - Resolves vague spoken queries (e.g., *"the blue bottle my daughter bought"*) into a binary (A/B) visual comparison card.
-3. **Module 3: Live Companion (`/api/arlo/live/ws`)**
-   - Full-duplex WebSocket stream enabling conversational photo storytelling with natural voice barge-in interruption.
-4. **Module 4: Family Hub (`/api/arlo/frame/*`)**
-   - Bi-directional sync allowing adult children to remotely push photos and maintain household knowledge.
-
-All module interfaces are strictly enforced with **Pydantic Schemas** (`app/schemas/`), ensuring zero contract drift between frontend and backend.
-
----
-
-## 👥 Team Responsibilities
-
-| Contributor | Role & Assigned Module | Core Paths |
-| :--- | :--- | :--- |
-| **Xiyu Chen** | **AI Engine & M1 Vision Explainer** | `app/core/base_model.py`<br>`app/modules/m1_vision_tool.py` |
-| **Yiding Wang** | **M2 Memory Buy & API Gateway** | `app/modules/m2_memory_tool.py`<br>`app/api/routes.py` |
-| **Kaiyu Feng** | **M4 Accessibility Frame Frontend** | Frontend client / Web view (48px+ large fonts) |
-| **Weihang You** | **M3 Live Companion & Pitch Lead** | `app/modules/m3_live_tool.py`<br>Demo & Presentation |
-
----
-
-## 🚀 Quickstart Guide
-
-### 1. Prerequisites
-- Python 3.10+
-- Google Cloud / Gemini API Key with **Gemini 4 Argon** access.
-
-### 2. Setup
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+```text
+                               ┌────────────────────────────────────────────────────────┐
+                               │           Gemini 4 Argon Foundation Engine             │
+                               │          (1M Context, Native Thinking Control)         │
+                               └──────────────────────────┬─────────────────────────────┘
+                                                          │
+                    ┌──────────────────┬──────────────────┴──────────────────┬──────────────────┐
+                    ▼                  ▼                                     ▼                  ▼
+             [Module 1: Vision] [Module 2: Memory Buy]                [Module 3: Live Voice] [Module 4: Frame Hub]
+             POST /vision/explain POST /memory/buy                    WS /live/ws            GET/POST /frame/*
+                    │                  │                                     │                  │
+                    ▼                  ▼                                     ▼                  ▼
+             Medicine & Bills   Fuzzy Speech -> Two High-Res          Full-Duplex Companion  Ambient Photo Album
+             Plain English +    A/B Candidate Comparison Cards        Photo Storytelling &   & Family Remote Push
+             Large-Print (48px) for Single-Decision Confirmation     Barge-in Interruption  State Synchronization
