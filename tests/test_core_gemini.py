@@ -32,7 +32,9 @@ def config(**kwargs):
 
 
 def response(text='{"answer":"ok"}', **kwargs):
-    return SimpleNamespace(id="interaction-test-1", status="completed", output_text=text, **kwargs)
+    values = dict(id="interaction-test-1", status="completed", output_text=text)
+    values.update(kwargs)
+    return SimpleNamespace(**values)
 
 
 def engine_with(create):
@@ -77,6 +79,31 @@ async def test_structured_request_and_metadata(caplog):
     assert engine.last_metadata.source == "gemini"
     assert "private-user-text" not in caplog.text
     assert request["input"][1]["data"] not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_id", [None, ""])
+async def test_stateless_response_without_id_is_valid(missing_id):
+    create = Mock(return_value=response(id=missing_id))
+    engine = engine_with(create)
+    result = await engine.generate_structured("question", None, Answer)
+    assert result.answer == "ok"
+    assert create.call_args.kwargs["store"] is False
+    assert engine.last_metadata.source == "gemini"
+    assert engine.last_metadata.interaction_id is None
+
+
+@pytest.mark.asyncio
+async def test_stored_probe_requires_and_preserves_id():
+    create = Mock(return_value=response())
+    engine = engine_with(create)
+    await engine.generate_structured("question", None, Answer, store=True)
+    assert create.call_args.kwargs["store"] is True
+    assert engine.last_metadata.interaction_id == "interaction-test-1"
+
+    missing = engine_with(Mock(return_value=response(id=None)))
+    with pytest.raises(GeminiInvalidOutputError):
+        await missing.generate_structured("question", None, Answer, store=True)
 
 
 @pytest.mark.asyncio

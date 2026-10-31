@@ -2,7 +2,8 @@
 
 Run from any directory: python scripts/smoke_test_gemini.py
 Optional image probe: python scripts/smoke_test_gemini.py --image sample.png
-Prints only status, model, interaction ID and latency, never image/label content.
+The text-only probe is stored so it returns a verifiable interaction ID. Image
+probes remain stateless and print no image or label content.
 """
 
 import argparse
@@ -43,12 +44,17 @@ async def probe(image_path: str | None = None) -> int:
         else:
             await engine.generate_structured(
                 'Return JSON with status exactly "ready".', None, ProbeResult,
+                store=True,
             )
         metadata = engine.last_metadata
-        if metadata is None or metadata.source != "gemini" or not metadata.interaction_id:
+        if metadata is None or metadata.source != "gemini":
             print("FAIL: no verified Gemini interaction metadata.")
             return 1
-        print(f"PASS model={metadata.model} interaction_id={metadata.interaction_id} "
+        if not image_path and not metadata.interaction_id:
+            print("FAIL: stored probe returned no interaction ID.")
+            return 1
+        interaction_id = metadata.interaction_id or "not-stored"
+        print(f"PASS model={metadata.model} interaction_id={interaction_id} "
               f"latency_seconds={metadata.latency_seconds:.3f}")
         return 0
     except GeminiError as exc:

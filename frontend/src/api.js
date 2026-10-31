@@ -56,7 +56,8 @@ export function parseEnvelope(body, validate) {
   let source = 'unverified';
   if (object(meta)) {
     if (meta.is_mock === true || meta.source === 'demo') source = 'demo';
-    else if (meta.is_mock === false && meta.source === 'gemini' && text(meta.interaction_id)) source = 'gemini';
+    else if (meta.is_mock === false && meta.source === 'gemini'
+      && (text(meta.interaction_id) || text(meta.model))) source = 'gemini';
     else if (meta.is_mock === false && ['keyword', 'local'].includes(meta.source)) source = meta.source;
   }
   Object.defineProperty(body.data, PROVENANCE, { value: source, configurable: true });
