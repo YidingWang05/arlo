@@ -31,7 +31,7 @@ it('sends the photo and session, displays chunks, and speaks them in order until
   expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
   const first = window.speechSynthesis.speak.mock.calls[0][0];
   expect(first.text).toBe('First sentence.');
-  act(() => socket.receive(event('STORY_COMPLETE', { story_id: 'story-1', source: 'argon', interaction_id: 'interaction-1' })));
+  act(() => socket.receive(event('STORY_COMPLETE', { story_id: 'story-1', source: 'argon', model: 'gemini-4-argon', interaction_id: 'interaction-1' })));
   expect(result.current.active).toBe(true);
   act(() => first.onend());
   expect(window.speechSynthesis.speak.mock.calls[1][0].text).toBe('Second sentence.');
@@ -39,6 +39,34 @@ it('sends the photo and session, displays chunks, and speaks them in order until
   expect(result.current.status).toBe('complete');
   expect(result.current.source).toBe('ai');
   expect(socket.readyState).toBe(3);
+});
+
+it.each([null, undefined, 'interaction-1'])('accepts verified Argon completion with optional interaction ID: %s', (interactionId) => {
+  const { result } = renderHook(() => usePhotoStory());
+  const socket = begin(result);
+  act(() => socket.receive(event('CAPTION_CHUNK', { story_id: 'story-1', sequence: 1, text: 'A garden.', source: 'argon' })));
+  act(() => socket.receive(event('STORY_COMPLETE', {
+    story_id: 'story-1', source: 'argon', model: 'gemini-4-argon', interaction_id: interactionId,
+  })));
+  expect(result.current.source).toBe('ai');
+  expect(result.current.caption).toBe('A garden.');
+  act(() => window.speechSynthesis.speak.mock.calls[0][0].onend());
+  expect(result.current.status).toBe('complete');
+});
+
+it.each([
+  { source: 'argon', interaction_id: 'interaction-1' },
+  { source: 'argon', model: 'other-model', interaction_id: null },
+  { source: 'argon', model: 'gemini-4-argon', interaction_id: 123 },
+  { source: 'argon', model: 'gemini-4-argon', interaction_id: '' },
+  { source: 'argon', model: 'gemini-4-argon', interaction_id: '   ' },
+  { source: 'unverified', model: 'gemini-4-argon', interaction_id: 'interaction-1' },
+])('keeps invalid or unverified completion metadata unverified: %j', (metadata) => {
+  const { result } = renderHook(() => usePhotoStory());
+  const socket = begin(result);
+  act(() => socket.receive(event('STORY_COMPLETE', { story_id: 'story-1', ...metadata })));
+  expect(result.current.source).toBe('unverified');
+  expect(result.current.status).toBe('complete');
 });
 
 it('cancels immediately, clears queued speech and ignores late chunks until stop acknowledgement', () => {

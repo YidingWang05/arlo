@@ -9,6 +9,8 @@ to the shared engine; client model/key/source fields are never forwarded.
 Successful streams emit STORY_STARTED, ordered CAPTION_CHUNK events, then
 STORY_COMPLETE with source, model and interaction_id. Provider failures emit
 ERROR with STORY_UNAVAILABLE or STORY_TIMEOUT; concurrent starts get STORY_BUSY.
+interaction_id is null when a successful stateless provider response has no ID;
+its absence does not change the server-verified Argon source or enable storage.
 Demo stories require explicit server-side provider injection.
 INTERRUPT joins the active story task before acknowledging PLAYBACK_STOP with
 the stopped story_id (null while idle). No more captions or completion events
@@ -106,14 +108,19 @@ running in a worker thread may continue until its own transport timeout.
     )
     metadata = gemini_engine.last_metadata
     if (metadata is None or metadata.source != "gemini"
-            or metadata.model != ARGON_MODEL
-            or not isinstance(metadata.interaction_id, str)
-            or not metadata.interaction_id.strip()):
+            or metadata.model != ARGON_MODEL):
         raise RuntimeError("The shared engine did not verify the story origin")
+    # Stateless Interactions may omit their ID. The shared engine verifies the
+    # provider and model; an ID is optional observability metadata, not proof of
+    # origin. Keep malformed supplied IDs invalid without enabling server storage.
+    interaction_id = metadata.interaction_id
+    if interaction_id is not None and (
+            not isinstance(interaction_id, str) or not interaction_id.strip()):
+        raise RuntimeError("The shared engine returned an invalid interaction ID")
     if (not isinstance(text, str) or not text.strip()
             or len(text) > MAX_STORY_CHARACTERS or len(text.split()) >= 90):
         raise ValueError("The shared engine returned invalid or oversized story text")
-    return Story(text.strip(), "argon", metadata.model, metadata.interaction_id)
+    return Story(text.strip(), "argon", metadata.model, interaction_id)
 
 
 def story_chunks(story: Story) -> list[str]:

@@ -138,7 +138,9 @@ export function usePhotoStory() {
         clearTimeout(current.timer);
         current.done = true;
         if (message.source === 'demo') setSource('demo');
-        else if (message.source === 'argon' && typeof message.interaction_id === 'string' && message.interaction_id.trim()) setSource('ai');
+        // The backend verifies the provider/model; stateless calls may have no ID.
+        else if (message.source === 'argon' && message.model === 'gemini-4-argon'
+          && (message.interaction_id == null || (typeof message.interaction_id === 'string' && message.interaction_id.trim()))) setSource('ai');
         else setSource('unverified');
         finishIfDone();
       } else if (message.type === 'ERROR' && (!message.story_id || message.story_id === current.storyId)) {
