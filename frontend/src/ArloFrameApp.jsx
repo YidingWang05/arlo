@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { explainLabel, findProducts, getPhotos, PROVENANCE, safeImageUrl } from './api.js';
 import { demoMemory, demoPhotos, demoVision } from './demo.js';
 import { useSpeech } from './useSpeech.js';
+import { usePhotoStory } from './usePhotoStory.js';
 
 function Icon({ name, size = 28 }) {
   const paths = {
@@ -81,6 +82,7 @@ export default function ArloFrameApp() {
   const heading = useRef(null);
   const firstRender = useRef(true);
   const speech = useSpeech();
+  const story = usePhotoStory();
   const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const visiblePhoto = photos[photoIndex % Math.max(photos.length, 1)];
 
@@ -97,6 +99,8 @@ export default function ArloFrameApp() {
   }, []);
 
   const navigate = useCallback((next) => {
+    story.stop();
+    story.clear();
     request.current?.abort();
     request.current = null;
     stopRecognition();
@@ -107,7 +111,7 @@ export default function ArloFrameApp() {
     setSelected(null);
     setVoiceMessage('');
     setScreen(next);
-  }, [speech.stop, stopRecognition]);
+  }, [speech.stop, stopRecognition, story.stop, story.clear]);
 
   const back = useCallback(() => {
     if (selected) { speech.stop(); setSelected(null); }
@@ -120,6 +124,7 @@ export default function ArloFrameApp() {
   useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') {
+        if (story.active) { story.stop(); return; }
         if (listening) { stopRecognition(); return; }
         if (speech.speaking) { speech.stop(); return; }
         if (screen !== 'ambient') back();
@@ -127,7 +132,7 @@ export default function ArloFrameApp() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [back, screen, listening, speech.speaking, speech.stop, stopRecognition]);
+  }, [back, screen, listening, speech.speaking, speech.stop, stopRecognition, story.active, story.stop]);
 
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
@@ -154,12 +159,12 @@ export default function ArloFrameApp() {
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (!rotate || photos.length < 2 || screen !== 'ambient' || motion.matches) return;
-    const timer = setInterval(() => setPhotoIndex((value) => (value + 1) % photos.length), 20_000);
+    if (!rotate || photos.length < 2 || screen !== 'ambient' || motion.matches || story.active) return;
+    const timer = setInterval(() => { story.clear(); setPhotoIndex((value) => (value + 1) % photos.length); }, 20_000);
     const onChange = () => { if (motion.matches) { clearInterval(timer); setRotate(false); } };
     motion.addEventListener('change', onChange);
     return () => { clearInterval(timer); motion.removeEventListener('change', onChange); };
-  }, [rotate, photos.length, screen]);
+  }, [rotate, photos.length, screen, story.active, story.clear]);
 
   useEffect(() => {
     if (!file) { setPreview(''); return; }
@@ -250,7 +255,15 @@ export default function ArloFrameApp() {
           <button className="button ask-button" onClick={() => navigate('home')}>Ask Arlo<Icon name="arrow" /></button>
         </div>
       </section>
-      {photos.length > 1 && <div className="album-controls"><button className="button quiet" onClick={() => setPhotoIndex((value) => (value + 1) % photos.length)}>Next photo<Icon name="arrow" /></button><button className="button quiet" aria-pressed={rotate} onClick={() => setRotate((value) => !value)}><Icon name={rotate ? 'pause' : 'play'} />{rotate ? 'Pause photos' : 'Rotate photos'}</button></div>}
+      {visiblePhoto && <section className="story-panel" aria-label="Photo story">
+        <div className="story-controls"><button className="button secondary" disabled={story.active || demo} onClick={() => { speech.stop(); story.start(visiblePhoto); }}><Icon name="play" />Start a story</button><button className="button quiet" disabled={!story.active || story.status === 'stopping'} onClick={story.stop}><Icon name="stop" />Stop</button></div>
+        {demo && <p className="small-note">Stories are unavailable in local demo mode.</p>}
+        <p role="status" className="small-note">{story.notice}</p>
+        {story.source === 'demo' && <p className="small-note"><strong>Demo story — not a live AI result.</strong></p>}
+        {story.source === 'unverified' && <p className="small-note"><strong>Story source unverified.</strong></p>}
+        {story.caption && <div className="story-caption" aria-label="Story captions">{story.caption}</div>}
+      </section>}
+      {photos.length > 1 && <div className="album-controls"><button className="button quiet" onClick={() => { story.stop(); story.clear(); setPhotoIndex((value) => (value + 1) % photos.length); }}>Next photo<Icon name="arrow" /></button><button className="button quiet" aria-pressed={rotate} onClick={() => setRotate((value) => !value)}><Icon name={rotate ? 'pause' : 'play'} />{rotate ? 'Pause photos' : 'Rotate photos'}</button></div>}
     </main> : <main id="main" className="inspector-main">
       <div className="intro"><p className="eyebrow">{screen === 'home' ? 'LET’S TAKE IT ONE STEP AT A TIME' : screen === 'vision' ? 'EXPLAIN THIS LABEL' : 'FIND A FAMILIAR PRODUCT'}</p><h1 ref={heading} tabIndex={-1}>{title}</h1></div>
 
