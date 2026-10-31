@@ -1,10 +1,14 @@
 import json
 import logging
 import re
+from contextvars import ContextVar
+from app.schemas.common import ResponseMeta, generation_meta
 from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.m2_memory_buy import CandidateItem, MemoryBuyRequest, MemoryBuyResult
 from app.data.household_memory import HOUSEHOLD_ITEMS
 from app.core.base_model import gemini_engine
+
+memory_metadata = ContextVar("memory_metadata", default=None)
 
 class MemoryAttributes(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -37,6 +41,7 @@ def keyword_extract(query):
         keywords=normalise(query).split())
 
 async def run_memory_buy(speech_query: str) -> MemoryBuyResult:
+    memory_metadata.set(None)
     query = MemoryBuyRequest(speech_query=speech_query).speech_query
     literal = keyword_extract(query)
     fallback = False
@@ -67,5 +72,6 @@ async def run_memory_buy(speech_query: str) -> MemoryBuyResult:
     prefix = "These are the closest matches. " if score(ranked[0]) < 20 else "Here are two possible matches. "
     if fallback:
         prefix = "Using keyword matching. " + prefix
+    memory_metadata.set(ResponseMeta(source="keyword") if fallback else generation_meta(gemini_engine.last_metadata))
     return MemoryBuyResult(spoken_prompt=prefix + "Is it A on the left or B on the right?",
         candidates=[CandidateItem(**{k: i[k] for k in ("item_id", "name", "image_url", "display_tag")}) for i in ranked[:2]])
