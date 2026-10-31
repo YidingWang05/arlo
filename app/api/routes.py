@@ -11,7 +11,7 @@ from app.modules.m4_frame_hub import push_family_photo, get_frame_photos
 router = APIRouter(prefix="/api/arlo", tags=["Arlo Multimodal Framework"])
 
 @router.post("/vision/explain", response_model=BaseResponse[VisionExplainResult])
-async def api_vision_explain(file: UploadFile = File(...), query: str = Form("这个药怎么吃？")):
+async def api_vision_explain(file: UploadFile = File(...), query: str = Form("How should I take this medicine?")):
     image_bytes = await file.read()
     result = await run_vision_explain(image_bytes, query)
     return BaseResponse(data=result)

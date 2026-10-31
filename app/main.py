@@ -3,9 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 
 app = FastAPI(
-    title="Arlo Multimodal Everyday Frame Core",
-    description="Track 2 — Multimodal & Human-Centric AI (Google DeepMind / Gemini)",
-    version="1.0.0"
+    title="Arlo Multimodal Assistant (Gemini 4 Argon Core)",
+    description="Track 2 — Multimodal & Human-Centric AI powered by Gemini 4 Argon",
+    version="4.0.0"
 )
 
 app.add_middleware(
@@ -22,7 +22,8 @@ app.include_router(router)
 def root():
     return {
         "project": "Arlo Multimodal Living Assistant",
-        "track": "Track 2: Multimodal & Human-Centric AI",
+        "foundation_model": "gemini-4-argon",
+        "version": "4.0.0",
         "status": "ready",
         "docs": "/docs"
     }

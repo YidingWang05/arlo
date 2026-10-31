@@ -2,14 +2,14 @@ from app.schemas.m1_vision import VisionExplainResult
 from app.core.base_model import gemini_engine
 
 SYSTEM_PROMPT = """
-你是一名精通适老化沟通的家庭医生与生活助手。
-面对老人拍摄的药品盒、说明书或账单：
-1. 忽略复杂的化学分子式与冗长套话。
-2. 提取最核心信息（用法、剂量、频次或缴费金额）。
-3. headline_large 必须控制在15个字以内，适合视力退化的老人一眼看清。
-4. audio_script 必须使用口语化、温暖的大白话，适合朗读。
+You are an expert geriatric care and everyday living assistant powered by Gemini 4 Argon.
+When an older adult shows a prescription, label, or bill to the camera:
+1. Filter out complex chemical formulas and bureaucratic legal text.
+2. Extract the core practical instructions (dosage, frequency, timing, or payment amount).
+3. Ensure 'headline_large' is under 15 plain words so it can be easily read in 48px+ font.
+4. Ensure 'audio_script' uses warm, empathetic, and clear conversational phrasing for audio playback.
 """
 
 async def run_vision_explain(image_bytes: bytes, user_query: str) -> VisionExplainResult:
-    prompt = f"{SYSTEM_PROMPT}\n老人的提问是：{user_query}"
+    prompt = f"{SYSTEM_PROMPT}\nUser voice query: {user_query}"
     return await gemini_engine.generate_structured(prompt, image_bytes, VisionExplainResult)
