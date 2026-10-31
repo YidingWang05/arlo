@@ -130,9 +130,9 @@ class GeminiCoreEngine:
 
     async def generate_structured(
         self, prompt: str, image_bytes: bytes | None, response_schema: type[T],
-        *, system_instruction: str | None = None,
+        *, system_instruction: str | None = None, store: bool = False,
     ) -> T:
-        """Generate and validate JSON. None means text-only; empty bytes are invalid."""
+        """Generate and validate JSON; storage stays opt-in for private inputs."""
         self._metadata.set(None)
         if not isinstance(prompt, str) or not prompt.strip():
             raise GeminiInputError("A non-empty prompt is required.")
@@ -153,7 +153,7 @@ class GeminiCoreEngine:
         request = {
             "model": self.model_name,
             "input": content,
-            "store": False,
+            "store": store,
             "generation_config": {
                 "thinking_level": self.config.GEMINI_THINKING_LEVEL,
                 "max_output_tokens": self.config.GEMINI_MAX_OUTPUT_TOKENS,
@@ -170,29 +170,41 @@ class GeminiCoreEngine:
         try:
             if getattr(interaction, "status", "completed") != "completed":
                 raise ValueError("Interaction did not complete")
-            if not isinstance(interaction.id, str) or not interaction.id:
-                raise ValueError("Missing interaction ID")
-            if not isinstance(interaction.output_text, str):
+            # The live API currently omits id for stateless store=False calls.
+            # An ID is required only when the caller opts into server storage.
+            raw_interaction_id = getattr(interaction, "id", None)
+            if store and (
+                not isinstance(raw_interaction_id, str) or not raw_interaction_id
+            ):
+                raise ValueError("Missing stored interaction ID")
+            if raw_interaction_id in (None, ""):
+                interaction_id = None
+            elif isinstance(raw_interaction_id, str):
+                interaction_id = raw_interaction_id
+            else:
+                raise ValueError("Invalid interaction ID")
+            output_text = getattr(interaction, "output_text", None)
+            if not isinstance(output_text, str):
                 raise ValueError("Missing text output")
             # Provenance is controlled by the server, not by generated JSON.
             from app.schemas.m1_vision import VisionExplainResult
             if response_schema is VisionExplainResult:
-                payload = json.loads(interaction.output_text)
+                payload = json.loads(output_text)
                 if not isinstance(payload, dict):
                     raise ValueError("Expected an object")
                 payload["source"] = "gemini"
                 result = response_schema.model_validate(payload)
             else:
-                result = response_schema.model_validate_json(interaction.output_text)
+                result = response_schema.model_validate_json(output_text)
         except (ValidationError, ValueError, TypeError, AttributeError):
             raise GeminiInvalidOutputError(
                 "Gemini returned an incomplete or invalid response. Please try again."
             ) from None
         self._metadata.set(GenerationMetadata(
-            "gemini", self.model_name, interaction.id, time.monotonic() - start
+            "gemini", self.model_name, interaction_id, time.monotonic() - start
         ))
         logger.info("Gemini generation completed model=%s interaction_id=%s",
-                    self.model_name, interaction.id)
+                    self.model_name, interaction_id or "not-stored")
         return result
 
     async def _request(self, request: dict):

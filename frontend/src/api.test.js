@@ -11,7 +11,8 @@ describe('defensive API contract', () => {
   });
   it.each([
     [{ source: 'gemini', interaction_id: 'interaction-123', is_mock: false }, 'gemini'],
-    [{ source: 'gemini', interaction_id: null, is_mock: false }, 'unverified'],
+    [{ source: 'gemini', interaction_id: null, model: 'gemini-4-argon', is_mock: false }, 'gemini'],
+    [{ source: 'gemini', interaction_id: null, model: null, is_mock: false }, 'unverified'],
     [{ source: 'gemini', interaction_id: 'interaction-123' }, 'unverified'],
     [{ source: 'gemini', interaction_id: 'interaction-123', is_mock: true }, 'demo'],
     [{ source: 'demo', interaction_id: null, is_mock: true }, 'demo'],

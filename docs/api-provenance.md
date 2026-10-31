@@ -3,10 +3,13 @@
 Successful responses retain `code`, `message`, and `data`, and now include `meta`:
 
 ```json
-{"source":"gemini","interaction_id":"<provider interaction ID>","model":"gemini-4-argon","is_mock":false}
+{"source":"gemini","interaction_id":null,"model":"gemini-4-argon","is_mock":false}
 ```
 
 `source` is `gemini` only when the shared engine supplies generation metadata.
+Privacy-preserving `store=false` calls may omit the provider interaction ID;
+the server-controlled model name still establishes provenance. The text-only
+smoke probe opts into storage so it can return a provider interaction ID.
 Other values are `keyword` for M2 deterministic fallback, `demo` for explicit
 core demo mode, `local` for the family album, and `unverified` when provenance
 is unavailable. Non-Gemini responses do not fabricate an interaction ID.
@@ -25,5 +28,6 @@ exhausted retry errors 503. M2 extraction failures retain its specified local
 keyword fallback, returning 200 with `meta.source="keyword"` and visible wording.
 
 Frontend owners can use these fields to distinguish local, fallback, and demo
-states. The current frontend already recognizes Gemini metadata with a nonempty
-interaction ID and `is_mock != true`; other sources remain visibly unverified.
+states. The frontend recognizes server-controlled Gemini metadata with either a
+nonempty interaction ID or model name and `is_mock=false`; unmarked responses
+remain visibly unverified.
