@@ -55,6 +55,10 @@ svg { flex-shrink: 0; }
 .ask-button { background: #f6f3df; color: #254d3e; min-height: 86px; padding: 20px 38px; border-radius: 22px; font-size: 32px; gap: 45px; }
 .ask-button:hover { background: #fffdf5; }
 .album-controls { display: flex; justify-content: center; gap: 16px; padding-top: 16px; }
+.story-panel { margin-top: 16px; padding: 22px 26px; border: 1px solid #c8d2c2; border-radius: 22px; background: #e9eee3; }
+.story-controls { display: flex; gap: 16px; flex-wrap: wrap; }
+.story-panel [role=status]:not(:empty), .story-panel .small-note:not(:empty) { margin-top: 12px; }
+.story-caption { margin-top: 16px; font-size: 32px; line-height: 1.45; overflow-wrap: anywhere; }
 .app-footer { display: flex; justify-content: space-between; gap: 20px; align-items: center; color: #596157; font-size: 16px; min-height: 80px; }
 .demo-toggle { min-height: 64px; padding: 12px 0 12px 20px; display: inline-flex; align-items: center; gap: 12px; cursor: pointer; }
 .demo-toggle input { width: 24px; height: 24px; accent-color: #254d3e; }

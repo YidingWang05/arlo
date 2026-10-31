@@ -40,5 +40,7 @@ The integration test starts isolated local FastAPI servers, overrides the API
 key to empty and explicitly enables demo mode for one server. It calls the
 real album, vision and memory routes using the frontend API client, checks the
 two served image URLs, and verifies that a no-key vision request returns an
-error. It needs local loopback access and does not call Gemini or verify event
+error. The WebSocket checks also exercise errors and interruption, and inject
+the backend's explicitly labelled demo story provider for the successful stream.
+It needs local loopback access and does not call Gemini or verify event
 credentials. Run the separate live smoke test with the backend owner for that.
