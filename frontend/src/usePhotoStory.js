@@ -35,6 +35,7 @@ export function usePhotoStory() {
     // Cancel before waiting for the network acknowledgement.
     if (canSpeak()) window.speechSynthesis.cancel();
     if (!current) return;
+    current.busy = true;
     current.accept = false;
     current.queue.length = 0;
     current.playing = false;
@@ -55,13 +56,14 @@ export function usePhotoStory() {
   }, [dispose]);
 
   const start = useCallback((photo) => {
-    if (run.current || !photo?.id || !photo?.caption) return;
+    if (!photo?.id || !photo?.caption || run.current?.busy) return;
+    dispose(run.current);
     setCaption(''); setNotice('Connecting to the story…'); setSource(''); setStatus('connecting');
     if (canSpeak()) window.speechSynthesis.cancel();
     let socket;
     try { socket = new WebSocket(socketUrl()); }
     catch { setStatus('error'); setNotice('Could not connect to the story. Please try again.'); return; }
-    const current = { socket, sessionId: '', storyId: '', queue: [], playing: false, accept: true, done: false, nextSequence: 1, timer: null };
+    const current = { socket, sessionId: '', storyId: '', queue: [], playing: false, accept: true, done: false, busy: true, nextSequence: 1, timer: null };
     run.current = current;
 
     const fail = (message) => {
@@ -70,7 +72,8 @@ export function usePhotoStory() {
     };
     const finishIfDone = () => {
       if (current.done && !current.playing && current.queue.length === 0 && current.accept) {
-        dispose(current); setStatus('complete'); setNotice(!canSpeak() || current.speechFailed ? 'Story complete. Voice playback is unavailable; you can read it below.' : 'Story complete.');
+        current.busy = false;
+        setStatus('complete'); setNotice(!canSpeak() || current.speechFailed ? 'Story complete. Voice playback is unavailable; you can read it below.' : 'Story complete.');
       }
     };
     const playNext = () => {
@@ -81,10 +84,11 @@ export function usePhotoStory() {
       const utterance = new window.SpeechSynthesisUtterance(text);
       utterance.lang = /[\u4e00-\u9fff]/.test(text) ? 'zh-CN' : 'en-GB';
       utterance.rate = 0.85;
+      const playingStoryId = current.storyId;
       current.playing = true;
-      utterance.onend = () => { if (run.current === current && current.accept) { current.playing = false; playNext(); } };
+      utterance.onend = () => { if (run.current === current && current.accept && current.storyId === playingStoryId) { current.playing = false; playNext(); } };
       utterance.onerror = (event) => {
-        if (run.current !== current || !current.accept) return;
+        if (run.current !== current || !current.accept || current.storyId !== playingStoryId) return;
         current.playing = false;
         if (!['canceled', 'interrupted'].includes(event.error)) {
           current.queue.length = 0; current.speechFailed = true;
@@ -95,10 +99,23 @@ export function usePhotoStory() {
       try { window.speechSynthesis.speak(utterance); }
       catch { current.playing = false; current.queue.length = 0; current.speechFailed = true; setNotice('Voice playback is unavailable. You can read the story below.'); finishIfDone(); }
     };
+    current.sendText = (text) => {
+      clearTimeout(current.timer);
+      current.accept = true; current.done = false; current.busy = true;
+      current.storyId = ''; current.nextSequence = 1; current.speechFailed = false;
+      current.queue.length = 0; current.playing = false;
+      setCaption(''); setSource(''); setStatus('loading'); setNotice('Preparing your reply…');
+      try {
+        socket.send(JSON.stringify({ type: 'USER_TEXT', text, session_id: current.sessionId }));
+        current.timer = setTimeout(() => fail('The reply took too long. Please try again.'), 45000);
+        return true;
+      } catch { fail('Could not send your question. Please try again.'); return false; }
+    };
     current.timer = setTimeout(() => fail('The story connection timed out. Please try again.'), 15000);
     socket.onerror = () => fail('Could not connect to the story. Please try again.');
     socket.onclose = () => {
       if (run.current !== current) return;
+      if (!current.busy) { dispose(current); setNotice('Connection closed. Start a story to ask again.'); return; }
       if (!current.accept) { dispose(current); setStatus('idle'); setNotice('Story stopped.'); }
       else fail('The story connection closed. Please try again.');
     };
@@ -119,7 +136,9 @@ export function usePhotoStory() {
       }
       if (!current.sessionId || message.session_id !== current.sessionId) return;
       if (message.type === 'PLAYBACK_STOP' && !current.accept) {
-        dispose(current); setStatus('idle'); setNotice('Story stopped.'); return;
+        clearTimeout(current.timer);
+        current.busy = false;
+        setStatus('idle'); setNotice('Story stopped.'); return;
       }
       if (!current.accept) return;
       if (message.type === 'STORY_STARTED' && typeof message.story_id === 'string' && message.story_id && message.photo_id === photo.id && !current.storyId) {
@@ -149,7 +168,22 @@ export function usePhotoStory() {
     };
   }, [dispose]);
 
+  const sendText = useCallback((text) => {
+    if (typeof text !== 'string' || !text.trim() || text.length > 1000) {
+      setNotice('Please enter a question of up to 1000 characters.'); return false;
+    }
+    const current = run.current;
+    if (!current?.sessionId || current.socket.readyState !== 1) {
+      setNotice('Start a story before asking about this photo.'); return false;
+    }
+    if (current.busy) { setNotice('Please stop the story or wait until it finishes.'); return false; }
+    return current.sendText(text.trim());
+  }, []);
+
   useEffect(() => () => dispose(run.current), [dispose]);
-  const clear = useCallback(() => { setCaption(''); setSource(''); }, []);
-  return { start, stop, clear, status, caption, notice, source, active: ['connecting', 'loading', 'playing', 'stopping'].includes(status) };
+  const clear = useCallback(() => {
+    dispose(run.current); setCaption(''); setSource(''); setStatus('idle'); setNotice('');
+  }, [dispose]);
+  const canAsk = Boolean(run.current?.sessionId && !run.current.busy && run.current.socket.readyState === 1);
+  return { start, stop, clear, sendText, canAsk, status, caption, notice, source, active: ['connecting', 'loading', 'playing', 'stopping'].includes(status) };
 }
