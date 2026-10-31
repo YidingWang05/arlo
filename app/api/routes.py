@@ -3,6 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 from app.schemas.common import BaseResponse
+from app.core.base_model import GeminiError
 from app.schemas.m1_vision import VisionExplainResult
 from app.schemas.m2_memory_buy import MemoryBuyRequest, MemoryBuyResult
 from app.schemas.m4_frame import FamilyPhotoPush, FramePhotoItem
@@ -22,13 +23,18 @@ async def api_vision_explain(file: UploadFile = File(...), query: str = Form("Ho
         raise HTTPException(413, "Image exceeds the 10 MB limit")
     if not image_bytes:
         raise HTTPException(400, "Image is empty")
-    result = await run_vision_explain(image_bytes, query)
+    try:
+        result = await run_vision_explain(image_bytes, query)
+    except GeminiError as exc:
+        raise HTTPException(exc.http_status, str(exc)) from None
     return BaseResponse(data=result)
 
 @router.post("/memory/buy", response_model=BaseResponse[MemoryBuyResult])
 async def api_memory_buy(req: MemoryBuyRequest):
     try:
         result = await run_memory_buy(req.speech_query)
+    except GeminiError as exc:
+        raise HTTPException(exc.http_status, str(exc)) from None
     except TimeoutError:
         raise HTTPException(504, "Memory lookup timed out; please retry") from None
     except ConnectionError:

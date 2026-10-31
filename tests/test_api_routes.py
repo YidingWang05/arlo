@@ -4,6 +4,22 @@ from app.main import app
 from app.api import routes
 from app.modules import m2_memory_tool as m2
 from app.modules.m4_frame_hub import FRAME_ALBUM
+from app.core.base_model import GeminiInputError, GeminiConfigurationError, GeminiInvalidOutputError
+
+
+@pytest.mark.parametrize("error,status", [(GeminiInputError, 400), (GeminiConfigurationError, 503), (GeminiInvalidOutputError, 502)])
+@pytest.mark.parametrize("endpoint", ["vision", "memory"])
+def test_core_error_contract(client, monkeypatch, error, status, endpoint):
+    async def fail(*args):
+        raise error("Safe service message")
+    if endpoint == "vision":
+        monkeypatch.setattr(routes, "run_vision_explain", fail)
+        response = client.post("/api/arlo/vision/explain", files={"file": ("test.png", b"fixture", "image/png")})
+    else:
+        monkeypatch.setattr(routes, "run_memory_buy", fail)
+        response = client.post("/api/arlo/memory/buy", json={"speech_query": "blue"})
+    assert response.status_code == status
+    assert response.json() == {"detail": "Safe service message"}
 
 
 @pytest.fixture
