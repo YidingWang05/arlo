@@ -50,11 +50,15 @@ export function parseEnvelope(body, validate) {
   if (!Object.hasOwn(body, 'data') || !validate(body.data)) {
     throw new ArloApiError('Arlo could not read the result. Please try again.');
   }
-  // The scaffold silently substitutes mock results. Unmarked results must stay visibly unverified.
-  // Optional future metadata is additive; the existing BaseResponse contract still works.
+  // Only server-provided metadata establishes provenance. Treat missing or
+  // contradictory metadata conservatively; never promote a mock to Gemini.
   const meta = body.meta;
-  const source = object(meta) && meta.source === 'gemini' && text(meta.interaction_id)
-    && meta.is_mock !== true ? 'gemini' : 'unverified';
+  let source = 'unverified';
+  if (object(meta)) {
+    if (meta.is_mock === true || meta.source === 'demo') source = 'demo';
+    else if (meta.is_mock === false && meta.source === 'gemini' && text(meta.interaction_id)) source = 'gemini';
+    else if (meta.is_mock === false && ['keyword', 'local'].includes(meta.source)) source = meta.source;
+  }
   Object.defineProperty(body.data, PROVENANCE, { value: source, configurable: true });
   return body.data;
 }

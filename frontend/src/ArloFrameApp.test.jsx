@@ -4,11 +4,11 @@ import { expect, it, vi } from 'vitest';
 import ArloFrameApp from './ArloFrameApp.jsx';
 import { demoMemory, demoVision } from './demo.js';
 
-function mockApi({ vision = demoVision, failMemory = false } = {}) {
+function mockApi({ vision = demoVision, failMemory = false, meta = undefined } = {}) {
   const fetchMock = vi.fn(async (url) => {
     if (url.endsWith('/memory/buy') && failMemory) throw new TypeError('offline');
     const data = url.endsWith('/frame/photos') ? [] : url.endsWith('/vision/explain') ? vision : demoMemory;
-    return { ok: true, json: async () => ({ code: 200, message: 'success', data: structuredClone(data) }) };
+    return { ok: true, json: async () => ({ code: 200, message: 'success', data: structuredClone(data), meta }) };
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -34,7 +34,7 @@ it('uploads a label, displays the result, and speaks only on request with immedi
   expect(options.method).toBe('POST');
   expect(options.body.get('file')).toBe(file);
   expect(options.body.get('query')).toContain('Do not infer missing dosage');
-  expect(screen.getByText('Demo data — backend source unverified')).toBeVisible();
+  expect(screen.getByText('Result source unverified')).toBeVisible();
   expect(window.speechSynthesis.speak).not.toHaveBeenCalled();
   expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
   await user.click(screen.getByRole('button', { name: 'Read aloud' }));
@@ -42,6 +42,23 @@ it('uploads a label, displays the result, and speaks only on request with immedi
   window.speechSynthesis.cancel.mockClear();
   await user.click(screen.getByRole('button', { name: 'Stop speaking' }));
   expect(window.speechSynthesis.cancel).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  [{ source: 'keyword', is_mock: false }, 'Keyword matching'],
+  [{ source: 'local', is_mock: false }, 'Local result'],
+  [{ source: 'gemini', is_mock: false, interaction_id: 'id-123' }, 'AI response'],
+  [{ source: 'demo', is_mock: true }, 'Demo data — not a live AI result'],
+  [{ source: 'gemini', is_mock: false, interaction_id: null }, 'Result source unverified'],
+])('shows the correct visible source for backend metadata %j', async (meta, notice) => {
+  mockApi({ meta }); const user = userEvent.setup();
+  await openFlow(user, /Help me find a product/);
+  await user.type(screen.getByLabelText('What do you remember?'), 'blue bottle');
+  await user.click(screen.getByRole('button', { name: /Find my product/ }));
+  expect(await screen.findByText(notice)).toBeVisible();
+  if (['keyword', 'local', 'gemini'].includes(meta.source) && notice !== 'Result source unverified') {
+    expect(screen.getByText(/sample household catalogue; not verified purchase history/i)).toBeVisible();
+  }
 });
 
 it('offers retake and hides potentially unsafe instructions for a blurry image', async () => {
