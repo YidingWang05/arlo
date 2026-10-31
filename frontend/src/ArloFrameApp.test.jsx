@@ -135,7 +135,10 @@ it('enables the photo question form after stopping and streams the follow-up rep
   vi.stubGlobal('WebSocket', FakeSocket);
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ code: 200, message: 'success', data: [{ id: 'p1', image_url: 'https://example.com/photo.jpg', caption: 'A red flower', timestamp: '2026-10-31' }] }) })));
   const user = userEvent.setup(); render(<ArloFrameApp />);
-  expect(await screen.findByLabelText('Ask about this photo')).toBeDisabled();
+  expect(await screen.findByLabelText('Ask about this photo')).toBeEnabled();
+  expect(screen.getByPlaceholderText('Type a question about this photo…')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Ask about photo' })).toBeDisabled();
+  await user.type(screen.getByLabelText('Ask about this photo'), 'What colour is the flower?');
   await user.click(screen.getByRole('button', { name: /Start a story/ }));
   act(() => {
     socket.receive({ type: 'SESSION_READY' });
@@ -143,7 +146,6 @@ it('enables the photo question form after stopping and streams the follow-up rep
   });
   await user.click(screen.getByRole('button', { name: 'Stop' }));
   act(() => socket.receive({ type: 'PLAYBACK_STOP', story_id: 'story-1' }));
-  await user.type(screen.getByLabelText('Ask about this photo'), 'What colour is the flower?');
   await user.click(screen.getByRole('button', { name: 'Ask about photo' }));
   expect(socket.sent.at(-1)).toEqual({ type: 'USER_TEXT', text: 'What colour is the flower?', session_id: 's1' });
   expect(screen.getByLabelText('Ask about this photo')).toHaveValue('');
